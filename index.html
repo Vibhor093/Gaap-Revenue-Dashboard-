@@ -1579,11 +1579,23 @@ const acctKey=(a)=>ALIAS[a]||a;
   $('t20-rank').onchange=(e)=>{st.trk=e.target.value;st.t20s={k:'rank',dir:1};draw();};
   $('t20-q').addEventListener('input',(e)=>{st.t2q=e.target.value.trim().toLowerCase();top20();});
 })();
+/* Top accounts file alignment (FP&A Travel BI top accounts logic) */
+const T20_MOVE=[{from:'Hospi BI',to:'Travel BI',product:'Wastage',accounts:['Expedia Group.','HBX Group']}];
+const T20_CASH=[{bu:'Travel BI',account:'Adelman Travel',sub:'Advito',from:'2025-04',to:'2026-03'}];
+function t20Moved(r,bu){return T20_MOVE.some(x=>x.from===bu&&r.bu===x.from&&r.product===x.product&&x.accounts.includes(r.account));}
+function t20Extra(bu){const out=[];const inc=st.incl;st.incl=true;
+  try{for(const x of T20_MOVE){if(x.to!==bu)continue;for(const r of P.G)if(r.bu===x.from&&r.product===x.product&&x.accounts.includes(r.account)&&pass(Object.assign({},r,{bu}),'bu'))out.push(Object.assign({},r,{bu}));}}finally{st.incl=inc;}
+  if(P.C)for(const a of T20_CASH){if(a.bu!==bu)continue;const v=new Float64Array(P.cols.length);let any=false,tmpl=null;
+    const idx=P.cols.map((c,i)=>c>=a.from&&c<=a.to?i:-1).filter(i=>i>=0);
+    for(const r of P.C)if(r.account===a.account&&r.sub===a.sub&&pass(r,'bu')){tmpl=tmpl||r;any=true;for(const i of idx)v[i]+=r.v[i];}
+    for(const r of P.G)if(r.bu===bu&&r.account===a.account&&r.sub===a.sub&&pass(r,'bu')){tmpl=tmpl||r;any=true;for(const i of idx)v[i]-=r.v[i];}
+    if(any&&tmpl)out.push(Object.assign({},tmpl,{bu,contract:'Cash adj.',sub:a.sub+' (cash, '+a.from+' to '+a.to+')',v}));}
+  return out;}
 function t20Data(bu){
   const ps=positions().filter(p=>avail(st.fy,p));const cur=ps.map(p=>P.at(st.fy,p)),ly=ps.map(p=>P.at(st.fy-1,p)).filter(i=>i>=0),pfy=d3.range(12).map(p=>P.at(st.fy-1,p)).filter(i=>i>=0);
   const budKeys=ps.map(p=>{const y=p>=9?st.fy+1:st.fy;return y+'-'+String(((p+3)%12)+1).padStart(2,'0');});
   const hasBud=!!(P.B&&budKeys.some(k=>P.Bcols.includes(k)));
-  const rows=P.G.filter(r=>r.bu===bu&&pass(r,'bu'));
+  const rows=P.G.filter(r=>r.bu===bu&&!t20Moved(r,bu)&&pass(r,'bu')).concat(t20Extra(bu));
   const m=new Map();const get=(k)=>{let o=m.get(k);if(!o){o={key:k,fy:0,ly:0,cur:0,bud:0,reg:new Map(),v:new Float64Array(P.cols.length),bm:new Map(),hasA:false};m.set(k,o);}return o;};
   for(const r of rows){const o=get(acctKey(r.account));o.hasA=true;o.fy+=sumIdx(r.v,pfy);o.ly+=sumIdx(r.v,ly);o.cur+=sumIdx(r.v,cur);for(let i=0;i<r.v.length;i++)o.v[i]+=r.v[i];const w=Math.abs(sumIdx(r.v,pfy))+Math.abs(sumIdx(r.v,cur));o.reg.set(r.region,(o.reg.get(r.region)||0)+w);}
   if(P.B){const accF=st.acct.size;for(const b of P.B){if(b.bu!==bu)continue;const k=acctKey(b.account);if(accF&&!st.acct.has(b.account)&&!st.acct.has(k))continue;const o=m.get(k)||(st.region.size||st.product.size||st.status.size||st.term.size||st.am.size?null:get(k));if(!o)continue;
@@ -1605,7 +1617,7 @@ function top20(){
   if(!P.B){body.append(el('div','gx-note','Budget data is loading…'));}
   $('t20-rank').value=st.trk;root.querySelectorAll('[data-tn]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.tn===st.tn));
   $('t20-title').textContent='Top '+st.tn+' accounts: GAAP actual vs budget';
-  const al=$('t20-alias');al.textContent='“Choice Agoda” actuals are shown under Choice Hotels International, where its budget sits.';
+  const al=$('t20-alias');al.textContent='“Choice Agoda” actuals are shown under Choice Hotels International, where its budget sits. Matches the FP&A Top accounts file: Travel BI includes Expedia Group. and HBX Group Wastage (booked under Hospi BI), and Adelman Travel’s Advito FY 25-26 uses the cash file.';
   const H=t20Hdr();const bus=st.tb==='both'?['Travel BI','Hospi BI']:[st.tb];
   let any=false;
   for(const bu of bus){
